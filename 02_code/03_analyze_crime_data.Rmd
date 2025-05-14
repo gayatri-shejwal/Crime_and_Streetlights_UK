@@ -1,0 +1,380 @@
+---
+title: "Geospatial Analysis Project: Analyze Crime Data"
+author: "Varvara Ilyina, Manjiri Satam, Gayatri Shejwal"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+<style>
+div.answer {background-color:#f3f0ff; border-radius: 5px; padding: 20px;}
+</style>
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA,
+                      fig.width = 7,
+                      fig.height = 4)
+
+```
+<br>
+
+The following R Markdown output depicts the code used to produce the Moran's I analysis for the crime data.
+
+Specifically, we look at crime data in Northern Ireland from April 2023 until March 2024.
+
+<hr>
+
+### Setup
+```{r}
+
+# clear environment
+rm(list = ls())
+
+# load libraries
+pacman::p_load(tidyverse, lubridate, spdep, sf, tmap, ggplot2, RColorBrewer, scales)
+
+# set tmap mode
+tmap_mode("plot")
+
+```
+
+<br>
+<hr>
+<br>
+
+### Data Pre-processing
+
+Load data
+```{r}
+
+# load data for northern ireland
+df_crime_ni <- read_csv("./data/out/crime_NI_apr2022_mar2023.csv")
+
+# load police boundary data
+df_geo_ni <- st_read("data/in/northern_ireland_police.geojson") %>%
+  mutate(zone_id = paste0("zone_", row_number()))
+
+```
+
+Convert crime data to a spatial object (EPSG:4326)
+```{r}
+
+df_crime_ni <- df_crime_ni %>% 
+  mutate(longitude = as.numeric(longitude), latitude = as.numeric(latitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+  mutate(longitude = st_coordinates(.)[, 1], latitude = st_coordinates(.)[, 2])
+
+```
+
+Overlay crime points and police boundary polygons
+```{r}
+
+sf_use_s2(FALSE)
+df_geo_ni <- st_zm(df_geo_ni) %>% st_make_valid()
+
+df_geo_ni <- st_zm(df_geo_ni)
+df_crime_ni <- st_transform(df_crime_ni, st_crs(df_geo_ni))
+
+```
+
+Plot
+```{r}
+
+ggplot() +
+  geom_sf(data = df_geo_ni,
+          fill = "white",
+          color = "grey",
+          alpha = 0.4) +
+  geom_sf(data = df_crime_ni,
+          size = 0.3,
+          alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Crime locations in Northern Ireland",
+       subtitle = "March 2022 - Feb. 2025")
+
+# save
+ggsave("plots/crime_loc_ni.png", width = 10, height = 8, dpi = 300)
+
+```
+
+<br>
+<hr>
+<br>
+
+### Data Analysis: Moran's I
+
+#### Use police precinct boundaries
+
+Aggregate number of crimes occurred per polygon
+```{r}
+
+# join each crime to its containing polygon
+df_crime_geo_ni <- st_join(df_crime_ni, df_geo_ni, join = st_within)
+
+# aggregate crime counts per polygon
+crime_counts <- df_crime_geo_ni %>%
+  st_drop_geometry() %>%
+  group_by(zone_id) %>%
+  summarise(crime_count = n(), .groups = "drop")
+
+# merge with polygons
+df_crime_geo <- df_geo_ni %>%
+  left_join(crime_counts, by = "zone_id")
+
+# fill missing values with 0
+df_crime_geo$crime_count[is.na(df_crime_geo$crime_count)] <- 0
+
+```
+
+#### Plot cloropleth + crime points
+
+Overlay crime locations with cloropleth plot
+```{r}
+
+ggplot() +
+  geom_sf(data = df_crime_geo, aes(fill = crime_count), color = "white") +
+  scale_fill_distiller(
+    palette = "Reds",
+    direction = 1,
+    name = "Total Crimes",
+    breaks = c(0, 5000, 10000, 15000, 20000),
+    labels = c("0–5,000", "5,000–10,000", "10,000–15,000", "15,000–20,000", "20,000+")
+  ) +
+  geom_sf(data = df_crime_ni, color = "darkred", size = 0.2, alpha = 0.5) +
+  labs(
+    title = "Crime Counts in Northern Ireland",
+    subtitle = "April 2022 – March 2023"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8),
+    legend.key.height = unit(0.4, "cm"),
+    legend.key.width = unit(0.6, "cm")
+  )
+
+# save plot
+ggsave("plots/crime_loc_cloropleth_ni.png", width = 10, height = 8, dpi = 300)
+
+```
+How to interpret:
+
+- Cloropleth plot used to identify hotpots of crime
+- Color gradient: The darker the red, the more crimes within that police precinct
+- Top crime areas: Dark red areas, such as Belfast and Derry, may correspond to urban centers with more population density and indicate higher total crime volumes
+
+<br>
+
+#### Calculate Moran's I
+```{r}
+
+# create spatial neighbors
+nb <- poly2nb(df_crime_geo)
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
+# run Local Moran's I
+local_moran <- localmoran(df_crime_geo$crime_count, lw, zero.policy = TRUE)
+
+# add results
+df_crime_geo$local_I <- local_moran[, "Ii"]
+df_crime_geo$p_val <- local_moran[, "Pr(z != E(Ii))"]
+
+```
+
+Classify into LISA quadrants
+```{r}
+
+# compute global mean and lagged mean
+mean_crime <- mean(df_crime_geo$crime_count, na.rm = TRUE)
+lagged_crime <- lag.listw(lw, df_crime_geo$crime_count)
+
+df_crime_geo$quadrant <- case_when(
+  df_crime_geo$crime_count > mean_crime & lagged_crime > mean_crime & df_crime_geo$p_val < 0.05 ~ "High-High",
+  df_crime_geo$crime_count < mean_crime & lagged_crime < mean_crime & df_crime_geo$p_val < 0.05 ~ "Low-Low",
+  df_crime_geo$crime_count > mean_crime & lagged_crime < mean_crime & df_crime_geo$p_val < 0.05 ~ "High-Low",
+  df_crime_geo$crime_count < mean_crime & lagged_crime > mean_crime & df_crime_geo$p_val < 0.05 ~ "Low-High",
+  TRUE ~ "Non-significant"
+)
+
+```
+
+Plot LISA map
+```{r}
+
+tm_shape(df_crime_geo) +
+  tm_polygons("quadrant",
+              palette = c(
+                "High-High" = "darkred",
+                "Low-Low" = "steelblue",
+                "High-Low" = "pink",
+                "Low-High" = "skyblue",
+                "Non-significant" = "white"
+              ),
+              title = "Local Moran's I Quadrants") +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+```{r}
+
+# save to .png
+tmap_save(
+  tm = tm_shape(df_crime_geo) +
+    tm_polygons("quadrant",
+                palette = c(
+                  "High-High" = "darkred",
+                  "Low-Low" = "steelblue",
+                  "High-Low" = "pink",
+                  "Low-High" = "skyblue",
+                  "Non-significant" = "white"
+                ),
+                title = "Local Moran's I Quadrants") +
+    tm_layout(legend.outside = TRUE),
+  filename = "plots/lisa_map_ni_geo.png",
+  width = 2000,
+  height = 1600,
+  units = "px",
+  dpi = 300
+)
+
+```
+
+How to interpret:
+
+- High-High (dark red): Areas with high crime surrounded by other high-crime areas, pointing to crime hotspots
+- Low-High (light blue): Areas with low crime surrounded by high-crime areas, possibly indicating under-policed or isolated areas
+- Non-significant (white): No clear spatial pattern found, could be random
+
+- High-High cluster in and around Belfast indicates a crime center surrounded by similar areas
+- the Low-High area next to Belfast may point to a suburban region that surrounds the urban center with more crime
+
+<br>
+<hr>
+<br>
+
+#### Use Super Output Areas (SOA)
+
+Granular data downloaded from: https://www.nisra.gov.uk/support/output-geography-census-2011/super-output-areas-census-2011?utm_source=chatgpt.com#toc-2
+
+Northern Ireland doesn't use LSOAs like England or Wales, but similar fine units include Super Output Areas (SOAs) and Small Areas (SAs). Northern Ireland contains 890 SOAs, each with about 2000 people per unit. SAs are even smaller, containing only about 125 households.
+
+<hr>
+
+Load shapefile with SOA boundary polygons
+```{r}
+
+df_soa_ni <- st_read("data/in/SOA2011_esri_Shapefile/SOA2011.shp") %>%
+  st_zm() %>%
+  mutate(soa_id = paste0("SOA_", row_number()))
+
+```
+
+Convert crime data to sf points and match CRS
+```{r}
+
+# transform crime data to match SOA CRS
+df_crime_ni <- st_transform(df_crime_ni, st_crs(df_soa_ni))
+
+```
+
+Join crimes to SOA areas
+```{r}
+
+df_crime_soa_ni <- st_join(df_crime_ni, df_soa_ni, join = st_within)
+
+```
+
+Aggregate crimes by SOA
+```{r}
+
+crime_counts <- df_crime_soa_ni %>%
+  st_drop_geometry() %>%
+  group_by(soa_id) %>%
+  summarise(crime_count = n(), .groups = "drop")
+
+df_crime_soa <- df_soa_ni %>%
+  left_join(crime_counts, by = "soa_id") %>%
+  mutate(crime_count = ifelse(is.na(crime_count), 0, crime_count))
+
+```
+
+#### Plot cloropleth
+```{r, warning=FALSE}
+
+# plot
+tm_shape(df_crime_soa) +
+  tm_polygons("crime_count",
+              palette = "brewer.reds",
+              title = "Total Crimes") +
+  tm_layout(
+    main.title = "Crime Counts by Super Output Area\nApril 2022 – March 2023",
+    main.title.size = 1.2,
+    main.title.position = "center",
+    legend.outside = TRUE
+  )
+
+# save cloropleth
+tmap_save(
+  filename = "plots/crime_choropleth_ni_soa.png",
+  width = 2000, height = 1600, dpi = 300
+)
+
+```
+
+#### Calculate Moran's I
+```{r}
+
+nb <- poly2nb(df_crime_soa)
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+local_moran <- localmoran(df_crime_soa$crime_count, lw, zero.policy = TRUE)
+
+df_crime_soa$local_I <- local_moran[, "Ii"]
+df_crime_soa$p_val   <- local_moran[, "Pr(z != E(Ii))"]
+
+mean_crime <- mean(df_crime_soa$crime_count, na.rm = TRUE)
+lagged_crime <- lag.listw(lw, df_crime_soa$crime_count)
+
+df_crime_soa$quadrant <- case_when(
+  df_crime_soa$crime_count > mean_crime & lagged_crime > mean_crime & df_crime_soa$p_val < 0.05 ~ "High-High",
+  df_crime_soa$crime_count < mean_crime & lagged_crime < mean_crime & df_crime_soa$p_val < 0.05 ~ "Low-Low",
+  df_crime_soa$crime_count > mean_crime & lagged_crime < mean_crime & df_crime_soa$p_val < 0.05 ~ "High-Low",
+  df_crime_soa$crime_count < mean_crime & lagged_crime > mean_crime & df_crime_soa$p_val < 0.05 ~ "Low-High",
+  TRUE ~ "Non-significant"
+)
+
+```
+
+Plot LISA map with quadrants
+```{r}
+
+tm_shape(df_crime_soa) +
+  tm_polygons("quadrant",
+              palette = c(
+                "High-High" = "darkred",
+                "Low-Low" = "steelblue",
+                "High-Low" = "pink",
+                "Low-High" = "skyblue",
+                "Non-significant" = "white"
+              ),
+              title = "Local Moran's I Quadrants") +
+  tm_layout(legend.outside = TRUE)
+
+```
+
+
+

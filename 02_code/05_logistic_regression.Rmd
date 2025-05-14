@@ -1,0 +1,212 @@
+---
+title: "Logistic_Regression_Buffer_Analysis"
+author: "Gayatri Shejwal"
+date: "2025-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+# Load the required packages
+library(sf)
+library(tidyverse)
+library(forcats)
+library(broom)
+library(ggeffects)
+library(ggplot2)
+library(scales)
+```
+
+We begin by loading all the necessary datasets for our analysis. We have used only the data for Northern Ireland because the as street lighting data for the rest of the United Kingdom (UK) was extremely fragmented, and most of it was unavailable in the public domain. Further, we filter the crime dataset to retain only those incidents reported under the jurisdiction of the Police Service of Northern Ireland.
+
+```{r}
+## Northern Ireland
+
+## Load the crime data for all of UK
+all_crime <- read.csv("crime_all.csv")
+
+## Load the streetlight data for Northern Ireland
+ni_lights_sf <- read_sf("NI_Street_Lighting.geojson")
+
+## Load the police force boundaries for Northern Ireland
+ni_police_sf <- read_sf("northern_ireland_police_boundaries.geojson")
+
+## Filter for crime in only Northern Ireland
+ni_crime_sf <- all_crime |>
+    filter(falls_within == "Police Service of Northern Ireland")
+ni_crime_sf <- st_as_sf(ni_crime_sf, coords = c("longitude", "latitude"), crs = 4326)
+```
+
+We re-project all the spatial data to EPSG:27700, a British National Grid system that uses meters. This allows for distance-based operations like buffering.
+
+```{r}
+## Project the CRS into EPSG:27700 (in meters) for adding buffers
+
+ni_lights_sf_proj <- st_transform(ni_lights_sf, 27700)
+ni_crime_sf_proj <- st_transform(ni_crime_sf, 27700)
+ni_police_sf_proj <- st_transform(ni_police_sf, 27700)
+
+```
+
+Assuming that each streetlight illuminates a 30m radius around it, we create lighting coverage zones by applying a 30m buffer around each streetlight point.
+
+```{r}
+
+## Step 1: Create lighting coverage buffers: Buffer each light by 30m
+light_buffers <- st_buffer(ni_lights_sf_proj, dist = 30)
+
+```
+
+Each crime is then checked for intersection with any light buffer. If a crime lies within a buffer, it's marked as TRUE (lit), otherwise FALSE (unlit). This binary variable becomes our dependent variable.
+
+```{r}
+
+## Step 2: Classify each crime as inside or outside the light zone: Create a logical column: TRUE if crime is inside light coverage
+ni_crime_sf_proj$lit_area <- lengths(st_intersects(ni_crime_sf_proj, light_buffers)) > 0
+
+
+```
+
+
+As we have no time stamps on the crime data, we decided to explore seasonal variation using the month when the crime occurred. Another reason for exploring seasonality of crime is the wide variation in the daylight hours as seen during different seasons, which changes the duration for which street lights stay on. In the absence of direct time stamps, we used this to create a categorical predictor for the regression model. We classify each crime by seasons (UK) based on the month as follows:
+* March to May - Spring
+* June to August - Summer
+* September to November - Autumn
+* December to February - Winter
+
+```{r}
+## Step 3: Add a season column
+ni_crime_sf_proj <- ni_crime_sf_proj %>%
+  mutate(season = case_when(
+    substr(month, 6, 7) %in% c("12", "01", "02") ~ "Winter",
+    substr(month, 6, 7) %in% c("03", "04", "05") ~ "Spring",
+    substr(month, 6, 7) %in% c("06", "07", "08") ~ "Summer",
+    TRUE ~ "Autumn"
+  ))
+
+# Order seasons chronologically
+ni_crime_sf_proj$season <- factor(ni_crime_sf_proj$season, 
+                                  levels = c("Spring", "Summer", "Autumn", "Winter"))
+
+## Clean up crime_type labels for better readability
+ni_crime_sf_proj$crime_type <- fct_relabel(ni_crime_sf_proj$crime_type, stringr::str_to_title)
+
+```
+
+Next, we compute the number and proportion of crimes occurring in lit areas, grouped by crime type and season. This helps us identify patterns before modeling.
+
+
+```{r}
+## Step 4: Calculate proportions
+crime_summary <- ni_crime_sf_proj %>%
+  group_by(crime_type, season) %>%
+  summarise(
+    total_crimes = n(),
+    lit = sum(lit_area),
+    unlit = total_crimes - lit,
+    percent_lit = lit / total_crimes,
+    .groups = 'drop'
+  )
+
+print(crime_summary)
+
+# This gives a summary table with the % of crimes occurring in lit zones by crime type and season.
+
+```
+
+We use a chi-squared test to determine if the distribution of crimes across lit and unlit areas is significantly different by crime type.
+
+```{r}
+## Step 5: Chi-squared test
+# Test whether crime types differ significantly in where they occur (lit vs. unlit):
+
+table_xtab <- table(ni_crime_sf_proj$crime_type, ni_crime_sf_proj$lit_area)
+chisq.test(table_xtab)
+
+```
+
+The significant result (p < 0.001) suggests that the likelihood of a crime occurring in a lit area differs meaningfully across crime categories.
+
+This means that the crime type significantly influences whether a crime happens in a well-lit area or not. This supports the idea that lighting may deter or attract different kinds of crime.
+
+NOw, we fit a logistic regression model to predict whether a crime occurred in a lit area, depending on crime type and season. The model predicts whether a crime occurred in a lit area (coded as 1) or an unlit area (coded as 0).
+
+```{r}
+## Step 6: Logistic regression
+
+ni_crime_sf_proj$lit_area_bin <- as.integer(ni_crime_sf_proj$lit_area)
+ni_crime_sf_proj <- ni_crime_sf_proj %>%
+  mutate(across(c(crime_type, season), as.factor))
+
+# Outcome: 1 = lit area, 0 = unlit
+# Predictors: crime type, season
+
+model <- glm(lit_area_bin ~ crime_type + season, 
+             data = ni_crime_sf_proj, 
+             family = binomial())
+
+summary(model)
+
+```
+
+### Model Interpretation:  
+
+The model shows that different crimes are likely to occur in differently lit areas. Since both predictors are categorical, the model uses dummy coding, meaning each coefficient shows the effect of that category relative to a baseline ("Anti-social Behaviour" for crime type and "Spring" for season).
+
+Based on this, it can be said that robbery and bicycle theft are significantly more likely to occur in lit areas, whereas burglary, drug-related offenses, and other thefts are more likely to occur in unlit areas. Further, winter is associated with a slightly lower likelihood of crimes occurring in lit areas, possibly due to longer periods of darkness.
+
+```{r}
+## Print a tidy regression table 
+broom::tidy(model) %>% arrange(p.value)
+
+```
+
+```{r}
+## Show AIC value for model quality
+cat("Model AIC:", AIC(model), "\n")
+
+```
+
+AIC is a measure of model quality (the lower, the better). Our model has modest explanatory power which suggests that crime location is partly related to lighting, but other unmeasured factors likely matter too.
+
+Finally, let's visualise the model outcomes.
+
+```{r}
+## Step 7: Visualize the predicted probabilities
+
+# Get predicted probabilities by crime type
+predictions <- ggpredict(model, terms = "crime_type")
+
+# Create the plot
+logit_plot <- plot(predictions) +
+  theme_minimal(base_size = 18) +
+  labs(
+    title = "Predicted Probability of Crime Occurring in Lit Areas",
+    x = "Crime Type",
+    y = "Probability"
+  ) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 18, face = "bold"),
+    axis.title.y = element_text(size = 18, face = "bold"),
+    plot.title = element_text(face = "bold", size = 20),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    panel.grid = element_line(color = "grey85")
+  )
+
+
+# Print the plot
+print(logit_plot)
+
+# Save the plot
+ggsave("logistic_reg_horizontal.png", plot = logit_plot, dpi = 300, width = 14, height = 6)
+
+
+```
+

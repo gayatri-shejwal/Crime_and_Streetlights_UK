@@ -1,0 +1,561 @@
+---
+title: "Exploring Spatial Inequities in Urban Lighting and Crime Exposure in the UK"
+subtitle: "Distance Based Analysis"
+author: "Group: Gayatri Shejwal, Manjiri Satam, Varvara Ilyina"
+date: "Geospatial Analysis for Data Sceince, Spring 2025"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    number_sections: false
+---
+
+# Motivation
+
+This exploratory spatial analysis investigates whether urban lighting (as proxied by public streetlights) is associated with crime exposure in Northern Ireland.
+
+Here we are taking a counter factual approach. Instead of just looking at where crimes occur and checking if they are near/far from lights, we compare them to a baseline of a set of random points that could represent any place a crime could have occurred.
+
+
+# Packages
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(tmap)
+library(readxl)
+library(nngeo)
+
+```
+
+
+```{r, echo=FALSE}
+
+# Set the Working Directory
+
+setwd("C:/Manjiri Satam_created/Hertie_study/Spring 2025/Geospatial/project")
+
+```
+
+# Police Boundaries
+
+```{r}
+
+police <- st_read("northern_ireland_police.geojson")
+
+```
+Adding a identifier for each zone.
+
+```{r}
+police <- police %>%
+  mutate(zone_id = paste0("zone_", row_number()))
+```
+
+Plot
+
+```{r}
+ggplot() +
+  geom_sf(data = police,
+          fill = "white",
+          color = "black",
+          alpha = 0.4) +
+  theme_minimal() +
+  labs(title = "Police Boundaries of Northern Ireland")
+```
+
+# Streetlight Data
+
+The streetlight data for Norther Ireland is taken from: https://space-geoportal-queensub.hub.arcgis.com/datasets/street-lighting-1/explore
+
+```{r}
+
+sl_raw <- read_xlsx("Northern_Ireland_Street_Lighting.xlsx")
+
+head(sl_raw)
+
+```
+
+- The dataset includes detailed point-level information on public streetlights in Northern Ireland, with each record representing an individual lighting asset.
+- Each lighting point includes both projected coordinates (EASTING, NORTHING in British National Grid — EPSG:27700) and geographic coordinates (x, y as longitude and latitude — EPSG:4326). 
+- FID is the unique ID of the streetlight.
+
+```{r}
+
+unique(sl_raw$ITEM_TYPE_)
+
+```
+
+Here, all the data is of streetlights and no other light/objects are observed.
+
+```{r}
+n_distinct(sl_raw$FID)
+
+```
+All streetlights are unique.
+
+We begin by processing point-level streetlight data. Points with invalid coordinates (e.g., missing/ zero/ outside northern ireland) are removed to ensure spatial accuracy. Each valid point represents a physical streetlight, and we transform these into an sf spatial object in WGS 84 (EPSG:4326).
+
+
+```{r}
+streetlights <- sl_raw %>% 
+  filter(!is.na(x), x > -10, !is.na(y), y != 0) %>% #one off point with x ~ -10. removed that
+  select(FID, x, y) %>% 
+  rename(sl_id = FID, longitude = x, latitude = y) %>% 
+  mutate(place = "Northern_Ireland")
+```
+
+```{r}
+
+#First we convert the dataframe to a spatial object spatial object to WGS84 (EPSG:4326), which gives latitude and longitude.
+streetlights <- st_as_sf(streetlights, coords = c("longitude", "latitude"), crs = 4326)
+
+#Extract the transformed coordinates (longitude, latitude) into a matrix.
+coords <- st_coordinates(streetlights)
+
+#Add the longitude and latitude columns back into the original dataframe.
+streetlights <- streetlights %>%
+  mutate(longitude = coords[,1], latitude = coords[,2])
+
+streetlights$sl_id <- as.character(streetlights$sl_id)
+
+```
+
+## Simple Plot
+
+```{r}
+ggplot() +
+  geom_sf(data = police,
+          fill = "white",
+          color = "grey",
+          alpha = 0.4) +
+  geom_sf(data = streetlights,
+          size = 0.3,
+          alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Street Light locations in Northern Ireland")
+  # save
+  ggsave("plots/streetlight_loc_ni.png", width = 10, height = 8, dpi = 300)
+
+```
+
+## Plot cloropleth + streetlights points
+
+Aggregate number of streetlights occurred per polygon
+
+```{r}
+
+# Ensure NI (streetlight) and NI_geo (police boundaries) are in the same CRS object as well as the same EPSG code
+streetlights <- st_transform(streetlights, crs = st_crs(police))
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+
+# join each SL to its containing polygon
+sf::sf_use_s2(FALSE)  # turn off strict s2 engine
+df_sl_geo_ni <- st_join(streetlights, police, join = st_within)
+
+# aggregate streetlights counts per polygon
+sl_counts <- df_sl_geo_ni %>%
+  st_drop_geometry() %>%
+  group_by(zone_id) %>%
+  summarise(sl_count = n(), .groups = "drop")
+
+# merge with polygons
+df_sl_geo <- police %>%
+  left_join(sl_counts, by = "zone_id")
+
+# fill missing values with 0
+df_sl_geo$sl_count[is.na(df_sl_geo$sl_count)] <- 0
+
+```
+Overlay streelights locations with cloropleth plot
+
+
+```{r}
+
+ggplot() +
+  geom_sf(data = df_sl_geo, aes(fill = sl_count), color = "white") +
+  scale_fill_distiller(
+    palette = "Blues",
+    direction = 1,
+    name = "Total Streetlights",
+    breaks = c(0, 5000, 10000, 15000, 20000, 26000),
+    labels = c("0–5,000", "5,000–10,000", "10,000–15,000", "15,000–20,000", "20,000–25,000", "25,000+")
+  ) +
+  geom_sf(data = streetlights, color = "darkblue", size = 0.2, alpha = 0.5) +
+  labs(
+    title = "Streetlight Counts in Northern Ireland"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8),
+    legend.key.height = unit(0.4, "cm"),
+    legend.key.width = unit(0.6, "cm")
+  )
+
+# save plot
+ggsave("plots/sl_loc_cloropleth_ni_blue.png", width = 10, height = 8, dpi = 300)
+
+```
+
+How to interpret:
+
+- Cloropleth plot used to identify hotpots of streetlights
+- Color gradient: The darker the shade, the more streetlights within that police precinct
+- Top streetlights areas: Areas with more Blue dots may correspond to urban centers with more population density and indicate higher total streetlights volumes
+
+
+# Crime Data
+
+We use monthly geocoded crime records for Northern Ireland. The crime data is categorized into types such as theft, violence, etc., and covers the temporal span from April 2022 to March 2023.
+
+Crime data source: https://data.police.uk/data/
+
+```{r}
+crime_raw <- read.csv("crime_NI_apr2022_mar2023.csv")
+
+head(crime_raw)
+
+```
+
+```{r}
+#First we convert the crime dataframe to a spatial object using (EPSG:4326)
+crime <- crime_raw %>% 
+  mutate(longitude = as.numeric(longitude), latitude = as.numeric(latitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+  mutate(longitude = st_coordinates(.)[, 1], latitude = st_coordinates(.)[, 2])
+```
+
+Check types of crime
+
+```{r}
+unique(crime$crime_type)
+```
+
+Check the counts per crime type
+
+```{r}
+crime %>% 
+  group_by(crime_type) %>% 
+  count() %>% ungroup() %>%  arrange(desc(n))
+```
+
+# Overlay three dataset
+
+Ensure that all 3 data files are in the same crs format
+
+```{r}
+
+police <- st_zm(police)   
+streetlights <- st_transform(streetlights, st_crs(police))
+crime <- st_transform(crime, st_crs(police))
+
+```
+
+Check if all 3 are in same crs system
+
+```{r}
+#st_crs(streetlights)      # Street lights
+#st_crs(crime)             # Crime data
+#st_crs(police)            # Boundary
+```
+
+
+Plot all 3 using ggplot
+
+```{r}
+ggplot() +
+  geom_sf(data = police, fill = "white", color = "grey", alpha = 0.4) +         # boundaries
+  geom_sf(data = streetlights, aes(color = "Street Lights"), size = 0.3, alpha = 0.7) +   # street lights
+  geom_sf(data = crime, aes(color = "Crime"), size = 0.3, alpha = 0.7) +        # crime points
+  scale_color_manual(values = c("Street Lights" = "red", "Crime" = "darkblue")) +
+  theme_minimal() +
+  labs(color = "Legend") +
+  ggtitle("Street Lights and Crime Locations in Northern Ireland")
+```
+
+
+# Distance Based Analysis
+
+## Methodological Approach
+
+To assess the proximity between crime locations and streetlights, we calculate the distance to the nearest streetlight for each crime point. This is done using the st_nn() function from the nngeo package, which performs efficient nearest-neighbor searches and is significantly faster than computing full pairwise distance matrices. The resulting distance (in meters) serves as a proxy for how well-lit a crime location is, allowing us to examine the role of streetlight presence in crime exposure.
+
+Our core **research question** is: Are crimes in Northern Ireland more likely to occur further from streetlights than expected by chance?
+
+To address this, we test the following hypotheses:
+
+**Null Hypothesis (H₀)**: There is no difference in the distance to the nearest streetlight between actual crime locations and randomly sampled points in the same geographic area.
+
+**Alternative Hypothesis (H₁)**: Crime locations are, on average, located farther from streetlights than randomly sampled points, implying that crimes are more likely to occur in under-lit areas.
+
+We hypothesize that crimes, on average, occur farther from streetlights than would be expected by chance. To test this, we generate a large set of randomly sampled control points across Northern Ireland and compute their nearest-streetlight distances. These control points serve as a spatial null model, representing the expected distribution of distances if lighting had no influence on crime location.
+
+## Data Prep
+
+Check if all the data is in correct format
+
+```{r}
+class(streetlights)
+class(police) 
+class(crime)
+
+```
+
+Currently all the files are in CRS is EPSG:4326, the coordinates are in degrees, not meters. Thus, the distance calculated will be in will be in decimal degrees. 
+
+This means that, distances <br>
+
+- Are not linear distances (1 degree ≠ constant meters everywhere),<br>
+- Vary by latitude
+
+Therefore, we transform all the files in the CRS British National Grid (EPSG:27700) which uses meters as its unit.
+
+```{r}
+
+streetlights <- st_transform(streetlights, 27700)
+police <- st_transform(police, 27700)
+crime <- st_transform(crime, 27700)
+
+```
+
+
+## Random Point Generation and Sampling Strategy
+
+Since our crime dataset contains 154,903 locations and the streetlight dataset includes 302,145 points across 26 police boundary zones, we generate a comparable number of random points (~75,000 approximately 50%) to represent the counterfactual spatial distribution. These points are allocated proportionally based on the area of each police zone, ensuring fair spatial representation.
+
+The random points are generated within each administrative boundary polygon using st_sample(), and then combined into a single spatial object. Geographic coordinates (longitude and latitude) are extracted and stored for later analysis and visualization. This step ensures that our comparison is based on a robust and spatially balanced set of points.
+
+```{r}
+# Compute area for each boundary zone
+
+sf::sf_use_s2(FALSE)
+
+police <- police %>%
+  mutate(area_km2 = as.numeric(st_area(geometry)) / 10^6)
+
+```
+
+
+```{r}
+# Compute proportional share of total points of 75,000
+
+total_points <- 75000
+police <- police %>%
+  mutate(point_share = round((area_km2 / sum(area_km2)) * total_points))
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+#Generate points per zone
+
+set.seed(123)
+
+random_points_list <- lapply(1:nrow(police), function(i) {
+  zone_geom <- police[i, ]
+  n_points <- zone_geom$point_share
+
+  if (is.na(n_points) || n_points == 0) return(NULL)
+
+  tryCatch({
+    points_in_zone <- st_sample(zone_geom, size = n_points, type = "random")
+    if (length(points_in_zone) == 0) return(NULL)
+
+    st_sf(geometry = points_in_zone) %>%
+      mutate(zone_id = zone_geom$zone_id[[1]])
+  }, error = function(e) {
+    message(paste("Skipping zone", i, "due to sampling error."))
+    return(NULL)
+  })
+})
+
+```
+
+
+```{r}
+#Combine into one sf object
+random_points_all <- do.call(rbind, random_points_list) %>%
+  mutate(type = "random")
+
+#Add Latitude and Longitude Columns
+coords <- st_coordinates(random_points_all)
+
+random_points_all <- random_points_all %>%
+  mutate(
+    longitude = coords[, 1],
+    latitude = coords[, 2]
+  )
+
+```
+
+## Distance Computation
+
+Calculating distances between each crime location and its nearest streetlight for all 150,000+ records proved to be computationally intensive and infeasible for real-time rendering and document knitting. To address this, we take a statistically valid approach by randomly sampling 10,000 points from both the crime and random datasets. These subsets retain sufficient power for hypothesis testing while dramatically improving processing speed.
+
+To avoid recalculating distances during every knit, we compute the nearest-streetlight distances for these subsets once, then save and reload them from .rds files. This method preserves reproducibility and allows the analysis to proceed without rerunning expensive spatial computations each time the report is updated.
+
+```{r}
+set.seed(123)
+
+crime_sample <- crime %>% slice_sample(n = 10000)
+random_sample <- random_points_all %>% slice_sample(n = 10000)
+```
+
+Saving the calculated distance as rds file and then opening that and working with it. It takes a lot of time to calculate the distance and also to knit this code chunk.
+
+```{r}
+
+# For Crime Points
+
+#crime_sample <- crime_sample %>% mutate(dist_to_light = st_nn(crime_sample, streetlights, k = 1, returnDist = TRUE)[[2]])
+
+#saveRDS(crime_sample, "crime_sample_with_distances_new.rds")
+
+```
+
+
+```{r}
+crime_sample <- readRDS("crime_sample_with_distances_new.rds") #to load later
+
+```
+
+Saving the calculated distance as rds file and then opening that and working with it. It takes a lot of time to calculate the distance and also to knit this code chunk.
+
+```{r}
+#For Random Points
+random_sample <- st_transform(random_sample, 27700)
+
+#random_sample <- random_sample %>% mutate(dist_to_light = st_nn(random_sample, streetlights, k = 1, returnDist = TRUE)[[2]])
+
+#saveRDS(random_sample, "random_sample_with_distances_new.rds")
+```
+
+
+```{r}
+random_sample <- readRDS("random_sample_with_distances_new.rds") #to load later
+
+```
+
+
+## Statistical Testing
+
+To evaluate whether crime locations are significantly farther from streetlights than random points, we apply two non-parametric statistical tests. These tests are appropriate because they do not assume a normal distribution of distances and are well-suited for comparing spatial patterns. 
+
+- The Kolmogorov–Smirnov (KS) test assesses whether the overall shapes of the two distance distributions differ, while 
+- the Mann–Whitney U test (Wilcoxon rank-sum) specifically compares their medians. 
+
+Together, these tests allow us to determine whether crimes are spatially distributed differently from what we would expect by chance in terms of proximity to lighting.
+
+
+```{r}
+
+#unlist the distance to light variable and make them flat numeric vectors:
+
+crime_dists <- unlist(crime_sample$dist_to_light)
+random_dists <- unlist(random_sample$dist_to_light)
+```
+
+
+### Kolmogorov–Smirnov Test
+
+
+```{r}
+
+ks_result <- ks.test(crime_dists, random_dists)
+print(ks_result)
+
+```
+
+**Output:**<br>
+- D = 0.8882: This is the maximum difference between the two cumulative distribution functions (CDFs).<br>
+- p-value < 2.2e-16: This is extremely significant.<br>
+
+**Interpretation:**<br>
+- The distributions of distances to the nearest streetlight are significantly different between crime locations and random locations.<br>
+- A D value as high as 0.88 means there's a very large shift in where crimes occur relative to lighting, suggesting crimes are strongly skewed toward different lighting conditions than you'd expect by chance.<br>
+
+
+### Mann–Whitney U Test (Wilcoxon rank-sum)
+
+```{r}
+wilcox_result <- wilcox.test(crime_dists, random_dists)
+print(wilcox_result)
+```
+**Output:**<br>
+- W = 2,985,511, <br>
+- p-value < 2.2e-16<br>
+
+**Interpretation:**<br>
+- The median distance to the nearest streetlight is significantly different between crime points and random points.<br>
+
+
+Together, these results strongly reject the null hypothesis, demonstrating that crime locations are not distributed randomly with respect to lighting infrastructure. However, rather than supporting our initial hypothesis that crimes occur farther from streetlights, the tests, when paired with visualization, suggest the opposite.
+
+## Visualizations
+
+To complement the statistical analysis, we visualize the distance distributions using multiple plot types.
+
+```{r}
+# Create a combined dataframe
+dist_df <- rbind(
+  data.frame(source = "Crime", dist = crime_dists),
+  data.frame(source = "Random", dist = random_dists)
+)
+```
+
+We have used a log scale is used to better visualize the skewed distribution of distances and to highlight differences in the tails. Since most crime distances are tightly clustered near zero and random point distances span a much wider range, the log transformation helps spread out the values and makes variation at both low and high ends more interpretable. Without it, meaningful patterns in the upper range would be compressed and hard to detect.
+
+
+```{r}
+#violin plot
+ggplot(dist_df, aes(x = source, y = dist, fill = source)) +
+  geom_violin(trim = TRUE) +
+  scale_y_continuous(trans = "log10") +
+  labs(title = "Distribution of Distance to Nearest Streetlight",
+       y = "Distance (log scale)", x = "") +
+  theme_minimal()
+```
+
+A log-scaled violin plot reveals a stark contrast in distribution shapes. Crime distances are sharply peaked at low values, while random point distances are more spread out and reach higher values. This skew reinforces the idea that crimes are disproportionately clustered close to lighting infrastructure. The log scale helps to reveal the tail behavior, showing that random points often fall in under-lit or unlit spaces, while crimes rarely do.
+
+ 
+```{r}
+# boxplot
+ggplot(dist_df, aes(x = source, y = dist, fill = source)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_y_continuous(trans = "log10") +  # Use log scale if there are extreme outliers
+  labs(title = "Distance to Nearest Streetlight by Type",
+       y = "Distance (
+       log scale)", x = "") +
+  theme_minimal()
+
+```
+
+A log-scaled boxplot confirms that the median distance to a streetlight is significantly lower for crimes than for random points. The interquartile range is narrower for crimes, and random points display more extreme outliers. This highlights that crimes tend to occur in more consistently lit areas, while random points vary more widely in exposure.
+
+# Discussion & Conclusion
+Although the statistical tests confirm a significant difference between the two distributions, the direction of the effect is opposite to what was initially hypothesized. Rather than occurring farther from streetlights, crimes in Northern Ireland are actually more likely to occur closer to them. This may reflect the reality that crimes cluster in more active or populated spaces where lights are also concentrated, such as commercial districts, nightlife zones, or transit corridors.
+
+This finding challenges the simplistic assumption that darkness alone drives crime risk. Instead, it points to more nuanced dynamics: streetlights may not always deter crime, and illuminated areas may still be vulnerable due to higher foot traffic or opportunity. Moreover, this raises important questions about the quality, placement, and contextual use of streetlighting in crime prevention strategies.
+
+Ultimately, this spatial analysis highlights the complexity of crime-light relationships and suggests that improving safety may require not just adding more lights, but rethinking how, where, and why they are deployed.
+
+**END**
+
+
+
+
+
+
+
+
+
+
+
+

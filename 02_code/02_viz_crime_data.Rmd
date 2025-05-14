@@ -1,0 +1,315 @@
+---
+title: "Geospatial Analysis Project: Visualize Crime Data"
+author: "Varvara Ilyina, Manjiri Satam, Gayatri Shejwal"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+<style>
+div.answer {background-color:#f3f0ff; border-radius: 5px; padding: 20px;}
+</style>
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA,
+                      fig.width = 7,
+                      fig.height = 4)
+
+```
+<br>
+
+The following R Markdown output depicts the code used to produce the visualizations for the crime data.
+
+Specifically, we look at crime data in Northern Ireland from April 2023 until March 2024, as well as for the whole UK from March 2022 until February 2025.
+
+<hr>
+
+### Setup
+```{r}
+
+# clear environment
+rm(list = ls())
+
+# load libraries
+pacman::p_load(tidyverse, lubridate, spdep, sf, tmap, ggplot2, RColorBrewer)
+
+# set tmap mode
+#tmap_mode("view")
+
+# set wd
+#setwd("")
+
+# load clean crime data
+df_2022_2023 <- read_csv("./data/out/df_2022_2023.csv")
+df_2023_2024 <- read_csv("./data/out/df_2023_2024.csv")
+df_2024_2025 <- read_csv("./data/out/df_2024_2025.csv")
+
+# merge data
+df_all <- bind_rows(df_2022_2023, df_2023_2024, df_2024_2025) %>%
+  select(month, falls_within, longitude, latitude, location, lsoa_code, lsoa_name, crime_type)
+
+```
+
+```{r}
+
+# load data for northern ireland
+df_crime_ni <- read_csv("./data/out/crime_NI_apr2022_mar2023.csv")
+
+# filter UK data for april 2022 until march 2023
+df_crime_uk <- df_all %>%
+  filter(month >= "2022-04" & month <= "2023-03")
+
+# save as .csv
+#write_csv(df_crime_uk, "./data/out/crime_UK_apr2022_mar2023.csv")
+
+```
+
+<br>
+<hr>
+<br>
+
+### Data Visualizations
+
+#### Distribution of crime types
+
+```{r}
+
+# UK 2022 - 2025
+ggplot(df_all, aes(crime_type)) +
+  geom_bar() +
+  labs(title = "Distribution of Crime Types",
+       subtitle = "UK Crime Data, March 2022 to Feb. 2025",
+       x = "Crime Type",
+       y = "Count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 13),
+        axis.title.y = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+
+# NI 2022 - 2023
+ggplot(df_crime_ni, aes(crime_type)) +
+  geom_bar() +
+  labs(title = "Distribution of Crime Types",
+       subtitle = "NI Crime Data, April 2022 to March 2023",
+       x = "Crime Type",
+       y = "Count") +
+  theme_classic() +
+  theme(plot.title = element_text(size = 13),
+        axis.title.y = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+```
+
+<br>
+
+```{r}
+
+# label region based on 'falls_within'
+df_labeled <- df_2022_2023 %>%
+  mutate(region = if_else(falls_within == "Police Service of Northern Ireland", 
+                          "Northern Ireland", 
+                          "Rest of UK"))
+
+# summarize crime counts by region and type
+df_summary <- df_labeled %>%
+  count(crime_type, region) %>%
+  group_by(crime_type) %>%
+  mutate(prop = n / sum(n))  # proportion per crime type
+
+# plot
+ggplot(df_summary, aes(x = crime_type, y = n, fill = region)) +
+  geom_col(position = "stack") +
+  geom_text(aes(label = scales::percent(prop, accuracy = 1)), 
+            position = position_stack(vjust = 0.8), size = 1.5, color = "black") +
+  labs(title = "Crime Type Distribution: Northern Ireland vs. Rest of UK",
+       subtitle = "April 2022 – March 2023",
+       x = "Crime Type",
+       y = "Crime Count",
+       fill = "Region") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+        plot.title = element_text(size = 13),
+        axis.title = element_text(size = 10),
+        axis.text.y = element_text(size = 9))
+
+```
+
+<br>
+
+#### Crime type by month
+
+```{r}
+
+# UK 2022 - 2023
+df_filtered <- df_crime_uk %>%
+  mutate(month = ym(month)) %>%
+  mutate(month = factor(format(month, "%Y-%m"),
+                        levels = format(seq(ymd("2022-04-01"), ymd("2023-03-01"), by = "1 month"), "%Y-%m")))
+
+ggplot(df_filtered, aes(x = month, fill = crime_type)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Share of Crime Types by Month",
+       subtitle = "UK Crime Data, April 2022 to March 2023",
+       x = "Month",
+       y = "Share of Crimes",
+       fill = "Crime Type") +
+  scale_fill_manual(values = colorRampPalette(brewer.pal(8, "Spectral"))(14)) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 13),
+        plot.subtitle = element_text(size = 11),
+        axis.title.y = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+# save
+ggsave("plots/crime_stacked_uk.png", width = 10, height = 8, dpi = 300)
+
+```
+
+```{r}
+
+# NI 2022 - 2023
+ggplot(df_crime_ni, aes(x = month, fill = crime_type)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Share of Crime Types by Month",
+       subtitle = "NI Crime Data, April 2022 to March 2023",
+       x = "Month",
+       y = "Share of Crimes",
+       fill = "Crime Type") +
+  scale_fill_manual(values = colorRampPalette(brewer.pal(8, "Spectral"))(14)) +
+  theme_classic() +
+  theme(plot.title = element_text(size = 13),
+        plot.subtitle = element_text(size = 11),
+        axis.title.y = element_text(size = 10),
+        axis.title.x = element_text(size = 10),
+        axis.text.y = element_text(size = 9),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 9))
+
+# save
+ggsave("plots/crime_stacked_ni.png", width = 10, height = 8, dpi = 300)
+
+```
+
+<br>
+
+#### Plot temporal trends
+
+UK, April 2022 - March 2023
+```{r}
+
+# plot crime over time
+df_plot <- df_crime_uk %>%
+  mutate(month = as.Date(paste0(month, "-01"))) %>%
+  group_by(month, crime_type) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  ungroup()
+
+# plot
+ggplot(df_plot, aes(x = month,
+                    y = n,
+                    color = crime_type)) +
+  geom_line(size = 1) +
+  scale_color_viridis_d(option = "D") +
+  theme_classic() +
+  labs(title = "Crime trends over time by type of crime",
+       subtitle = "Across the UK for April 2022 until March 2023",
+       x = "Month",
+       y = "Number of crimes",
+       color = "Crime type")
+
+# save
+ggsave("plots/crime_acrosstime_uk.png", width = 10, height = 8, dpi = 300)
+
+```
+
+UK, March 2022 - February 2025
+```{r}
+
+# plot crime over time
+df_plot <- df_all %>%
+  mutate(month = as.Date(paste0(month, "-01"))) %>%
+  group_by(month, crime_type) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  ungroup()
+
+# plot
+ggplot(df_plot, aes(x = month,
+                    y = n,
+                    color = crime_type)) +
+  geom_line(size = 1) +
+  scale_color_viridis_d(option = "D") +
+  theme_classic() +
+  labs(title = "Crime trends over time by type of crime",
+       subtitle = "Across the UK for March 2022 until Feb. 2025",
+       x = "Month",
+       y = "Number of crimes",
+       color = "Crime type")
+
+# save
+ggsave("plots/crime_acrosstime_all_uk.png", width = 10, height = 8, dpi = 300)
+
+```
+
+<br>
+
+### Map Crime across UK and NI
+
+```{r}
+
+# transform data
+crime_sample <- df_crime_uk %>%
+  sample_n(1000000)
+
+# WGS 84
+crime_sf <- st_as_sf(crime_sample, 
+                     coords = c("longitude", "latitude"), 
+                     crs = 4326)
+
+# plot
+tm_shape(crime_sf) +
+  tm_dots(size = 0.05)
+
+```
+
+```{r}
+
+# transform data
+crime_sample <- df_crime_ni %>%
+  sample_n(150000)
+
+# WGS 84
+crime_sf <- st_as_sf(crime_sample, 
+                     coords = c("longitude", "latitude"), 
+                     crs = 4326)
+
+# plot
+tm_shape(crime_sf) +
+  tm_dots(size = 0.05)
+
+```
+
+
+

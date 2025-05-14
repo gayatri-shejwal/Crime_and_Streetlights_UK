@@ -1,0 +1,703 @@
+---
+title: "Geospatial Group Project"
+subtitle: "Streetlight Data- - Preliminary Work"
+author: Manjiri, Gayatri, Varvara
+date: "May 2025"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    number_sections: false
+
+---
+
+**About This Document**
+
+This file contains the pre-processing workflow for various UK streetlight datasets that were collected during the early stages of our project. The original intention was to compile and standardize streetlight data from multiple cities and regions across the UK into a single, unified dataset for comparative geospatial analysis. Each dataset came in a different format, with varying coordinate systems and metadata structures.
+
+The primary goal here was to clean, filter, and convert all location data into a consistent format (latitude and longitude in WGS 84 / EPSG:4326), which would allow us to visualize and analyze them spatially. This included handling coordinates in Easting/Northing (British National Grid) and filtering out invalid or duplicate entries.
+
+However, this line of analysis was later set aside in favor of a more focused approach. After reviewing data availability and refining our research scope, we decided to concentrate exclusively on Northern Ireland, where we had complete and consistent datasets for both crime incidents and streetlight locations. Therefore, the work in this document is not used in the final analysis but remains included as documentation of the initial exploratory effort. It reflects earlier trials and could still be useful for future extensions or comparative regional work.
+
+To cross check if geolocation is correctly transformed: https://webapps.bgs.ac.uk/data/webservices/convertForm.cfm#bngToLatLng
+
+# Packages
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(tmap)
+library(readxl)
+
+```
+
+
+```{r, echo=FALSE}
+
+setwd("C:/Manjiri Satam_created/Hertie_study/Spring 2025/Geospatial/project")
+
+```
+
+# Pre-processing Steps
+
+For each dataset, we follow a standard cleaning and transformation procedure: <br>
+
+- Check if coordinate information is already in latitude/longitude format (EPSG:4326).<br>
+- If not, convert coordinates from British National Grid (EASTINGS and NORTHINGS, EPSG:27700) to WGS 84 (latitude and longitude).<br>
+- Remove unnecessary or irrelevant columns.<br>
+- Filter out missing or invalid coordinate entries (e.g., NA or zero values).<br>
+- Ensure that each streetlight entry is uniquely identified.<br>
+- Optionally, plot the cleaned data on a map for visual verification.<br>
+
+# Bradford
+
+```{r}
+
+Bradford_raw <- read_sf("Bradford_Street_Lighting.csv")
+
+head(Bradford_raw)
+
+```
+
+```{r}
+
+n_distinct(Bradford_raw$OBJECTID)
+
+```
+ObjectIDs are all unique
+
+```{r}
+
+Bradford_raw %>% group_by(UNIT_CODE) %>% count()
+
+```
+All are street lights.
+
+
+```{r}
+
+Bradford_raw %>%
+  filter(is.na(EASTINGS) | EASTINGS == 0 | is.na(NORTHINGS) | NORTHINGS == 0) %>%
+  nrow()
+
+```
+Remove these
+
+```{r}
+Bradford_raw %>% group_by(DEFECT) %>% count()
+```
+
+3277 have some defects. so we remove them.
+
+```{r}
+
+Bradford <- Bradford_raw %>% 
+  filter(DEFECT == "") %>% 
+  filter(!is.na(EASTINGS), EASTINGS != 0,
+         !is.na(NORTHINGS), NORTHINGS != 0) %>% 
+  select(OBJECTID, EASTINGS, NORTHINGS)
+
+head(Bradford)
+
+```
+
+First we convert the dataframe to a spatial object using British National Grid coordinates (EPSG:27700)
+
+```{r}
+Bradford <- st_as_sf(Bradford, coords = c("EASTINGS", "NORTHINGS"), crs = 27700)
+
+```
+
+Then reproject the spatial object to WGS84 (EPSG:4326), which gives latitude and longitude.
+
+```{r}
+
+Bradford <- st_transform(Bradford, crs = 4326)
+
+```
+
+Extract the transformed coordinates (longitude, latitude) into a matrix.
+
+```{r}
+coords <- st_coordinates(Bradford)
+
+```
+
+Add the longitude and latitude columns back into the original dataframe.
+
+```{r}
+
+Bradford <- Bradford %>%
+  mutate(longitude = coords[,1], latitude = coords[,2])
+
+Bradford <- Bradford %>% 
+  rename(sl_id = OBJECTID) %>% 
+  mutate(place = "Bradford") 
+
+Bradford$sl_id <- as.character(Bradford$sl_id)
+
+```
+
+```{r}
+
+qtm(Bradford, title = "Street Light Locations in Bradford")
+
+# qtm(Bradford, 
+#     dots.col = "darkgrey", 
+#     dots.size = 0.5, 
+#     title = "Street Light Locations in Bradford")
+
+
+```
+
+
+
+
+
+# Cambridgeshire
+
+```{r}
+Cambridgeshire_raw <- read.csv("Cambridgeshire_Street_Lighting.csv")
+
+head(Cambridgeshire_raw)
+
+```
+
+Latitute and Longitude already available. So just select the necessary columns.
+
+
+```{r}
+Cambridgeshire <- Cambridgeshire_raw %>% 
+  filter(!is.na(Latitude), Latitude != 0,
+         !is.na(Longitude), Longitude != 0) %>%
+  select(unitid, Longitude, Latitude) %>% 
+  rename(longitude = Longitude, latitude = Latitude, sl_id = unitid) %>%
+  mutate(longitude = as.numeric(longitude),
+         latitude = as.numeric(latitude)) %>%
+  # Convert to sf *after* adding lon/lat
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+```
+
+
+```{r}
+
+n_distinct(Cambridgeshire$sl_id)
+
+```
+All unique IDs.
+Since we do not have any information about defects. We assume all streetlights are in a working condition.
+
+```{r}
+# Extract coords as columns, without dropping sf class
+Cambridgeshire <- Cambridgeshire %>%
+  mutate(
+    longitude = st_coordinates(.)[, 1],
+    latitude = st_coordinates(.)[, 2]
+  ) %>% 
+  mutate(place = "Cambridgeshire")
+
+
+Cambridgeshire$sl_id <- as.character(Cambridgeshire$sl_id)
+```
+
+
+```{r}
+#plot
+qtm(Cambridgeshire, title = "Street Light Locations in Cambridgeshire")
+
+```
+
+
+# Camden
+
+```{r}
+
+Camden_raw <- read.csv("Camden_Street_Lighting.csv")
+
+head(Camden_raw)
+
+```
+
+```{r}
+
+Camden <- Camden_raw %>% 
+  filter(!is.na(Latitude), Latitude != 0,
+         !is.na(Longitude), Longitude != 0) %>%
+  select(Local.Authority.Asset.Number, Longitude, Latitude) %>% 
+  rename(longitude = Longitude, latitude = Latitude, sl_id = Local.Authority.Asset.Number) %>% 
+  mutate(longitude = as.numeric(longitude),
+         latitude = as.numeric(latitude)) %>%
+  
+  # Convert to sf *after* adding lon/lat
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+
+  mutate(place="Camden")
+
+# Extract coords as columns, without dropping sf class
+Camden <- Camden %>%
+  mutate(
+    longitude = st_coordinates(.)[, 1],
+    latitude = st_coordinates(.)[, 2]
+  ) 
+
+Camden$sl_id <- as.character(Camden$sl_id)
+
+```
+
+
+```{r}
+n_distinct(Camden$sl_id)
+```
+All unique IDs.
+Since we do not have any information about defects. We assume all streetlights are in a working condition.
+
+
+```{r}
+#plot
+qtm(Camden, title = "Street Light Locations in Camden")
+
+```
+
+
+
+
+
+# Leeds
+
+```{r}
+
+Leeds_raw <- read.csv("Leeds_Street_Lighting.csv")
+
+head(Leeds_raw)
+
+```
+
+
+```{r}
+#unique(Leeds_raw$Unit.Type)
+```
+
+```{r}
+
+Leeds <- Leeds_raw %>%
+  filter(Unit.Type== " Street Lights ")  %>% 
+  filter(!is.na(Easting), Easting != 0, !is.na(Northing), Northing != 0) %>% 
+  filter(Number.of.Lamps == 1)  #consider locations with a single lamp 
+  
+```
+
+```{r}
+Leeds %>%
+  group_by(Unit.Number) %>%
+  filter(n() > 1)
+```
+
+```{r}
+Leeds %>%
+  group_by(Unit.Number, Easting, Northing) %>%
+  filter(n() > 1)
+```
+
+Unique combination of unit ID and the coordinates. So not removing anything.
+
+```{r}
+
+Leeds <- Leeds %>% 
+  select(Unit.Number, Easting, Northing) %>% 
+  mutate(place = "Leeds") %>% 
+  rename(sl_id = Unit.Number)
+```
+
+First we convert the dataframe to a spatial object using British National Grid coordinates (EPSG:27700)
+
+```{r}
+Leeds <- st_as_sf(Leeds, coords = c("Easting", "Northing"), crs = 27700)
+
+```
+
+Then reproject the spatial object to WGS84 (EPSG:4326), which gives latitude and longitude.
+
+```{r}
+
+Leeds <- st_transform(Leeds, crs = 4326)
+
+```
+
+Extract the transformed coordinates (longitude, latitude) into a matrix.
+
+```{r}
+coords <- st_coordinates(Leeds)
+
+```
+
+Add the longitude and latitude columns back into the original dataframe.
+
+```{r}
+
+Leeds <- Leeds %>%
+  mutate(longitude = coords[,1], latitude = coords[,2])
+
+Leeds$sl_id <- as.character(Leeds$sl_id)
+
+```
+
+```{r}
+
+qtm(Leeds, title = "Street Light Locations in Leeds")
+
+```
+
+
+
+
+# Barnet- London
+
+```{r}
+
+Barnet_raw <- read.csv("London_Barnet_Street_Lighting.csv")
+
+head(Barnet_raw)
+
+```
+
+```{r}
+#unique(Barnet_raw$Asset_type)
+```
+
+
+```{r}
+Barnet <- Barnet_raw %>% 
+  filter(Asset_type %in% c( "SL - Street Lighting", "SL - Mounted Lighting")) %>% 
+  filter(!is.na(Asset_XCords), Asset_XCords != 0, !is.na(Asset_YCords), Asset_YCords != 0) %>%
+  select(Asset_ID, Asset_XCords, Asset_YCords) %>% 
+  mutate(place = "Barnet") %>% 
+  rename(sl_id = Asset_ID)
+```
+
+```{r}
+n_distinct(Barnet$sl_id)
+```
+All unique.
+
+```{r}
+# Convert to sf object (EPSG:27700 = British National Grid)
+Barnet <- st_as_sf(Barnet, coords = c("Asset_XCords", "Asset_YCords"), crs = 27700)
+
+# Transform to WGS84 (EPSG:4326) to get lat/lon
+Barnet <- st_transform(Barnet, crs = 4326)
+
+# Extract coordinates
+coords <- st_coordinates(Barnet)
+
+# Add back lat/lon columns to dataframe
+Barnet <- Barnet %>%
+  mutate(longitude = coords[, 1],
+         latitude = coords[, 2])
+
+Barnet$sl_id <- as.character(Barnet$sl_id)
+```
+
+```{r}
+qtm(Barnet, title = "Street Light Locations in Barnet")
+```
+# Redbridge
+
+```{r}
+
+Redbridge_raw <- read_xlsx("London_Redbridge_Street_Lighting.xlsx")
+
+head(Redbridge_raw)
+
+```
+
+```{r}
+unique(Redbridge_raw$feature_type_name)
+```
+
+
+```{r}
+
+Redbridge <- Redbridge_raw %>% 
+  filter(feature_type_name == "SL-Columns") %>% 
+  filter(!is.na(feat_cent_east), feat_cent_east != 0, !is.na(feat_cent_north), feat_cent_north != 0) %>% 
+  select("central_asset_id", "feat_cent_east","feat_cent_north") %>% 
+  rename(sl_id = central_asset_id) %>% 
+  mutate(place = "Redbridge") 
+  
+```
+
+
+```{r}
+n_distinct(Redbridge$sl_id)
+```
+All unique.
+
+```{r}
+head(Redbridge)
+```
+
+
+
+```{r}
+# Convert to sf object (EPSG:27700 = British National Grid)
+Redbridge <- st_as_sf(Redbridge, coords = c("feat_cent_east", "feat_cent_north"), crs = 27700)
+
+# Transform to WGS84 (EPSG:4326) to get lat/lon
+Redbridge <- st_transform(Redbridge, crs = 4326)
+
+# Extract coordinates
+coords <- st_coordinates(Redbridge)
+
+# Add back lat/lon columns to dataframe
+Redbridge <- Redbridge %>%
+  mutate(longitude = coords[, 1],
+         latitude = coords[, 2])
+
+head(Redbridge)
+```
+
+```{r}
+qtm(Redbridge, title = "Street Light Locations in Redbridge")
+```
+
+# Manchester
+
+```{r}
+
+Manchester_raw <- read_xlsx("Manchester_Street_Lighting.xlsx")
+
+head(Manchester_raw)
+
+```
+
+```{r}
+Manchester <- Manchester_raw %>% 
+  filter(!is.na(EASTING), EASTING != 0, !is.na(NORTHING), NORTHING != 0) %>% 
+  select(UNITID, EASTING, NORTHING) %>% 
+  rename(sl_id = UNITID) %>% 
+  mutate(place = "Manchester")
+```
+
+
+
+```{r}
+
+#First we convert the dataframe to a spatial object using British National Grid coordinates (EPSG:27700)
+Manchester <- st_as_sf(Manchester, coords = c("EASTING", "NORTHING"), crs = 27700)
+
+
+
+#Then reproject the spatial object to WGS84 (EPSG:4326), which gives latitude and longitude.
+Manchester <- st_transform(Manchester, crs = 4326)
+
+
+#Extract the transformed coordinates (longitude, latitude) into a matrix.
+coords <- st_coordinates(Manchester)
+
+
+#Add the longitude and latitude columns back into the original dataframe.
+
+Manchester <- Manchester %>%
+  mutate(longitude = coords[,1], latitude = coords[,2])
+
+Manchester$sl_id <- as.character(Manchester$sl_id)
+
+```
+
+
+```{r}
+qtm(Manchester, title = "Street Light Locations in Manchester")
+```
+
+# York
+
+```{r}
+
+York_raw <- read.csv("York_Street_lighting.csv")
+
+head(York_raw)
+
+```
+
+
+```{r}
+#unique(York_raw$UNIT_TYPE)
+```
+
+
+```{r}
+n_distinct(York_raw$IIT_NE_ID)
+```
+All unique.
+
+```{r}
+
+York <- York_raw %>% 
+  filter(UNIT_TYPE == "SL") %>% 
+  filter(!is.na(Latitude), Latitude != 0,!is.na(Longitude), Longitude != 0) %>%
+  select(Item_Id, Longitude, Latitude) %>% 
+  rename(longitude = Longitude, latitude = Latitude, sl_id = Item_Id) %>% 
+  mutate(longitude = as.numeric(longitude), latitude = as.numeric(latitude)) %>%
+  
+  # Convert to sf *after* adding lon/lat
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>% 
+
+  mutate(place="York")
+
+# Extract coords as columns, without dropping sf class
+York <- York %>%
+  mutate(longitude = st_coordinates(.)[, 1],latitude = st_coordinates(.)[, 2]) 
+
+York$sl_id <- as.character(York$sl_id)
+
+```
+
+
+```{r}
+qtm(York, title = "Street Light Locations in York")
+```
+
+# Northern Ireland
+
+## Streetlight
+
+```{r}
+
+NI_raw <- read_xlsx("Northern_Ireland_Street_Lighting.xlsx")
+
+head(NI_raw)
+
+
+```
+
+```{r}
+
+unique(NI_raw$ITEM_TYPE_)
+
+```
+
+```{r}
+n_distinct(NI_raw$FID)
+
+```
+All unique.
+
+
+```{r}
+NI <- NI_raw %>% 
+  filter(!is.na(EASTING), EASTING != 0, !is.na(NORTHING), NORTHING > 62) %>% 
+  select(FID, EASTING, NORTHING) %>% 
+  rename(sl_id = FID) %>% 
+  mutate(place = "Northern_Ireland")
+```
+
+```{r}
+
+#First we convert the dataframe to a spatial object using British National Grid coordinates (EPSG:27700)
+NI <- st_as_sf(NI, coords = c("EASTING", "NORTHING"), crs = 27700)
+
+
+#Then reproject the spatial object to WGS84 (EPSG:4326), which gives latitude and longitude.
+NI <- st_transform(NI, crs = 4326)
+
+
+#Extract the transformed coordinates (longitude, latitude) into a matrix.
+coords <- st_coordinates(NI)
+
+
+#Add the longitude and latitude columns back into the original dataframe.
+NI <- NI %>%
+  mutate(longitude = coords[,1], latitude = coords[,2])
+
+NI$sl_id <- as.character(NI$sl_id)
+
+```
+
+
+
+```{r}
+qtm(NI, title = "Street Light Locations in Northern Ireland")
+
+```
+## kml file
+
+A KML file (Keyhole Markup Language file) is a file format used to display geographic data in mapping software such as Google Earth, Google Maps, and QGIS. It stores points, lines, polygons, images, and 3D models along with metadata like names, descriptions, and styles.
+
+```{r}
+
+# Read the KML file
+NI_kml <- st_read("force kmls/northern-ireland.kml")
+
+# View basic structure
+print(NI_kml)
+plot(NI_kml)
+
+```
+
+```{r}
+# List all layers in the KML file
+st_layers("force kmls/northern-ireland.kml")
+
+```
+
+
+
+
+```{r}
+
+qtm(NI_kml, fill = "lightgrey", border.col = "darkblue") +
+  qtm(NI, dots.col = "red", dots.size = 0.5, title = "Street Lights in NI")
+```
+
+## GeoJSON
+
+```{r}
+NI_geo <- st_read("northern_ireland_police.geojson")
+```
+```{r}
+plot(NI_geo)
+```
+
+```{r}
+qtm(NI_geo)
+```
+
+
+
+# Combine it all
+
+```{r}
+
+# Combine them into one master sf object
+
+streetlights_all <- bind_rows(
+  Barnet, Bradford, Cambridgeshire, Camden,
+  Leeds, Manchester, Redbridge,York, NI)
+
+write.csv(streetlights_all, "streetlights_all.csv", row.names = FALSE)
+
+```
+
+```{r}
+class(streetlights_all)
+
+```
+```{r}
+nrow(streetlights_all)
+```
+
+```{r}
+qtm(streetlights_all)
+```
+
+
+
+
+
+
+

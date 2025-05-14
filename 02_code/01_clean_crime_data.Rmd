@@ -1,0 +1,199 @@
+---
+title: "Geospatial Analysis Project: Clean Crime Data"
+author: "Varvara Ilyina, Manjiri Satam, Gayatri Shejwal"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: tango
+    number_sections: no
+    theme: lumen
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+<style>
+div.answer {background-color:#f3f0ff; border-radius: 5px; padding: 20px;}
+</style>
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      comment = NA,
+                      fig.width = 7,
+                      fig.height = 4)
+
+```
+<br>
+
+The following R Markdown output depicts the code used to produce the data preparation and pre-processing steps for the crime data.
+
+Specifically, we look at crime data in Northern Ireland from April 2023 until March 2024, as well as for the whole UK from March 2022 until February 2025.
+
+<hr>
+
+### Setup
+```{r}
+
+# clear environment
+rm(list = ls())
+
+# load libraries
+pacman::p_load(tidyverse, janitor)
+
+```
+
+<br>
+
+### Merge data for Northern Ireland
+
+```{r}
+
+# define start and end dates
+start_date <- ymd("2022-04-01")
+end_date <- ymd("2023-03-01")
+
+# vector of all dates
+dates <- seq.Date(from = start_date, to = end_date, by = "month") %>% 
+  format("%Y-%m")
+
+```
+
+```{r}
+
+## load all "street.csv" files
+
+# loop to merge police precincts by month
+for (date in dates) {
+  
+  # set path to the directory with .csv files for the month
+  path <- paste0("./data/in/northern_ireland/", date)
+  
+  # list all .csv files with 'street' in their names
+  files <- list.files(path, pattern = "*street.csv", full.names = TRUE)
+  
+  # store all .csv files in a list
+  list_of_dfs <- lapply(files, read_csv)
+  
+  # combine all data frames into one
+  if (length(list_of_dfs) > 0) {
+    df_all <- bind_rows(list_of_dfs)
+    
+    # save the combined data frame with a name that includes the date
+    file_name <- paste0("./data/out/df_", gsub("-", "_", date), ".csv")
+    write_csv(df_all, file_name)
+    
+  } else {
+    print(paste("No .csv files found for", date))
+  }
+  
+}
+
+```
+
+```{r}
+
+# define date range
+dates <- seq.Date(ymd("2022-04-01"), ymd("2023-03-01"), by = "month") %>%
+  format("%Y_%m")  # match file name format
+
+file_paths <- paste0("./data/out/df_", dates, ".csv")
+
+# load and combine all monthly files
+df_crime_apr22_mar23 <- lapply(file_paths, read_csv) %>%
+  bind_rows() %>%
+  clean_names() %>%
+  filter(!is.na(longitude), !is.na(latitude), !is.na(crime_type)) %>%
+  select(month, falls_within, longitude, latitude, location, crime_type)
+
+# save as .csv
+write_csv(df_crime_apr22_mar23, "./data/out/crime_NI_apr2022_mar2023.csv")
+
+```
+
+<br>
+
+### Merge data for UK
+
+```{r}
+
+# define start and end dates
+start_date <- ymd("2022-03-01")
+end_date <- ymd("2025-02-01")
+
+# vector of all dates
+dates <- seq.Date(from = start_date, to = end_date, by = "month") %>% 
+  format("%Y-%m")
+
+```
+
+```{r}
+
+## load all "street.csv" files
+
+# loop to merge police precincts by month
+for (date in dates) {
+  
+  # set path to the directory with .csv files for the month
+  path <- paste0("./data/in/crime_data/", date)
+  
+  # list all .csv files with 'street' in their names
+  files <- list.files(path, pattern = "*street.csv", full.names = TRUE)
+  
+  # store all .csv files in a list
+  list_of_dfs <- lapply(files, read_csv)
+  
+  # combine all data frames into one
+  if (length(list_of_dfs) > 0) {
+    df_all <- bind_rows(list_of_dfs)
+    
+    # save the combined data frame with a name that includes the date
+    file_name <- paste0("./data/out/df_", gsub("-", "_", date), ".csv")
+    write_csv(df_all, file_name)
+    
+  } else {
+    print(paste("No .csv files found for", date))
+  }
+  
+}
+
+```
+
+```{r}
+
+# define yearly spans
+years <- 2022:2024
+
+# loop to merge dfs for each year
+for (yr in years) {
+  
+  # determine the start and end year
+  start_yr <- yr
+  end_yr <- yr + 1
+  
+  # vector of file names from march to february
+  span_dates <- seq.Date(from = ymd(paste0(start_yr, "-03-01")), to = ymd(paste0(end_yr, "-02-01")), by = "month") %>%
+    format("%Y-%m") %>%
+    sapply(function(x) paste0("./data/out/df_", gsub("-", "_", x), ".csv"))
+  
+  # load all dfs for the current span
+  yearly_data <- lapply(span_dates, read_csv) %>%
+    bind_rows()
+  
+  # clean df
+  df_clean <- yearly_data %>%
+    janitor::clean_names() %>%
+    filter(!is.na(longitude) & !is.na(latitude) & !is.na(crime_type))
+  
+  # save yearly data
+  write_csv(df_clean, paste0("./data/out/df_", start_yr, "_", end_yr, ".csv"))
+}
+
+```
