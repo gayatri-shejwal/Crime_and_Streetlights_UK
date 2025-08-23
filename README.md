@@ -68,7 +68,6 @@ Systematic Review Based on a Half-Century of Evaluation Research. CrimRxiv. http
 Detroit, Michigan. Cities, 79, 45–52. https://doi.org/10.1016/j.cities.2018.02.021
 
 ## Data Sources
-Data Sources:
 - Geocoded streetlight data from open data portals of local UK authorities (https://www.data.gov.uk/)
 - UK Police Crime Data with monthly, geocoded, categorized crime incidents
 (https://data.police.uk/data/)
