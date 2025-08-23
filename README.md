@@ -2,7 +2,10 @@
 # Crime and Streetlights in the UK: A Case Study of Northern Ireland
 The final data analysis project for the Geospatial Analysis class with Alexandra Kapp at the Hertie School (Spring 2025 semester).
  
-**Contributors:** *Gayatri Shejwal, Manjiri Satam, Varvara Ilyina*
+**Contributors:**
+[Gayatri Shejwal](https://github.com/gayatri-shejwal)
+[Manjiri Satam](https://github.com/Manjiri-Satam)
+[Varvara Ilyina](https://github.com/varvarailyina)
 
 
 ## Introduction
