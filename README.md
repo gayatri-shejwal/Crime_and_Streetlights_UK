@@ -33,13 +33,17 @@ In a complementary analysis, we evaluate lighting coverage using 30-meter buffer
 -   **Lighting Exposure by Crime Type:** A chi-squared test (χ² = 581.4, p < 0.001) reveals that lighting coverage varies significantly across crime categories. The baseline crime type occurs in well-lit areas, and relative to it, drug-related crimes, burglary, etc. are likely to occur in unlit areas, while crimes like robbery and bicycle theft are more likely to occur in well-lit areas.
 -   **Overall Coverage and Seasonality:** 91% of all crimes occurred within a 30-meter buffer of a streetlight. Seasonality also plays a role - winter crimes are more likely to occur in the dark, due to longer dark hours.
 
-![image info](./03_plots/logistic_reg_horizontal.png)
+
+<img src="./03_plots/logistic_reg_horizontal.png" alt="drawing" width="800"/>
+
 
 - Further, **local Moran’s I** identifies spatial crime clusters.
 	- A prominent High-High cluster (dark red) appears around Belfast, confirming it as a key crime hotspot.
 	- The adjacent Low-High area (light blue) may represent a lower-crime suburb bordering higher-risk zones
 
-![image info](./03_plots/lisa_map_ni.png)
+
+<img src="./03_plots/lisa_map_ni.png" alt="drawing" width="700"/>
+
 
 ## Limitations
 
