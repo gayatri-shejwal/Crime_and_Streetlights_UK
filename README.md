@@ -60,3 +60,16 @@ In a complementary analysis, we evaluate lighting coverage using 30-meter buffer
 Our analysis reveals that crimes in Northern Ireland tend to occur closer to streetlights than randomly sampled locations. While this challenges the common assumption that crime thrives in darkness, it highlights that lighting is not a universal deterrent.
 
 Some crimes, such as robbery and bicycle theft, are more common in well-lit areas, likely due to higher human activity and opportunity, whereas others, like burglary and drug offences, are more prevalent in under-lit zones. These findings suggest that the relationship between lighting and crime is complex and varies by crime type. Rather than assuming more lighting uniformly reduces crime, policymakers should adopt a context-sensitive approach to public lighting that accounts for both spatial patterns and the nature of criminal activity.
+
+## References
+- Welsh, B. C., Farrington, D. P., & Douglas, S. (2024). The Impact and Policy Relevance of Street Lighting for Crime Prevention: A 
+Systematic Review Based on a Half-Century of Evaluation Research. CrimRxiv. https://doi.org/10.21428/cb6ab371.5b88b0f1
+- Xu, Y., Fu, C., Kennedy, E., Jiang, S., & Owusu-Agyemang, S. (2018). The impact of street lights on spatial-temporal patterns of crime in 
+Detroit, Michigan. Cities, 79, 45–52. https://doi.org/10.1016/j.cities.2018.02.021
+
+## Data Sources
+Data Sources:
+- Geocoded streetlight data from open data portals of local UK authorities (data.gov.uk)
+- UK Police Crime Data with monthly, geocoded, categorized crime incidents
+(https://data.police.uk/data/)
+- Police Station Boundaries from the same platform (https://data.police.uk/data/boundaries/)
