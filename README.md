@@ -12,7 +12,7 @@ The final data analysis project for the Geospatial Analysis class with Alexandra
 
 Public street lighting is one of the most basic safety infrastructures. This project explores whether streetlight density relates meaningfully to the crimes reported in the UK, specifically in Northern Ireland. Using openly available data, we aim to understand whether certain less-lit areas are more vulnerable to crime. While there are several factors contributing to incidence of crime, identifying consistent spatial patterns could provide valuable insights for safer urban planning, including how such infrastructure must be distributed across different neighbourhoods.
 
-This study attempts to answer the following question:
+This study attempts to answer the following question:  
 ***How does street lighting relate to where and what types of crime occur in Northern Ireland?***
 
 ## Methodology
@@ -21,7 +21,7 @@ We use publicly available crime and streetlight data, comprising 150,000+ geocod
 
 To analyze spatial proximity, we calculate the distance from each crime location to the nearest streetlight using a nearest-neighbour approach. Due to computational limits, we use a random sample of 10,000 crime points and 10,000 spatially distributed random control points for comparison. We then apply the Kolmogorov–Smirnov and Mann–Whitney U tests to compare their distance distributions.
 
-In a complementary analysis, we evaluate lighting coverage using 30-meter buffer zones around all streetlights. Each crime is flagged as occurring inside or outside a lit zone. Using the full dataset, we conduct a chi-squared test to examine variation in lighting exposure across crime types and season, and fit a logistic regression model to predict the likelihood of a crime falling within a lit area based on crime type and season.
+In a complementary analysis, we evaluate lighting coverage using 30-meter buffer zones around all streetlights. Each crime is flagged as occurring inside or outside a lit zone. Using the full dataset, we conduct a chi-squared test to examine variation in lighting exposure across crime types and season, and fit a logistic regression model to predict the likelihood of a crime falling within a lit area based on crime type and season.  
 
 
 <p float="center">
@@ -34,7 +34,7 @@ In a complementary analysis, we evaluate lighting coverage using 30-meter buffer
 
 -   **Crime vs. Random Point Distance:** Kolmogorov–Smirnov test (D = 0.8882, p < 2.2e-16) and Mann–Whitney U test (p < 2.2e-16) show that crime locations are significantly different to streetlights than expected by chance.
 -   **Lighting Exposure by Crime Type:** A chi-squared test (χ² = 581.4, p < 0.001) reveals that lighting coverage varies significantly across crime categories. The baseline crime type occurs in well-lit areas, and relative to it, drug-related crimes, burglary, etc. are likely to occur in unlit areas, while crimes like robbery and bicycle theft are more likely to occur in well-lit areas.
--   **Overall Coverage and Seasonality:** 91% of all crimes occurred within a 30-meter buffer of a streetlight. Seasonality also plays a role - winter crimes are more likely to occur in the dark, due to longer dark hours.
+-   **Overall Coverage and Seasonality:** 91% of all crimes occurred within a 30-meter buffer of a streetlight. Seasonality also plays a role - winter crimes are more likely to occur in the dark, due to longer dark hours.  
 
 <p align="center">
 <img src="./03_plots/logistic_reg_horizontal.png" alt="drawing" width="800"/>
@@ -42,7 +42,7 @@ In a complementary analysis, we evaluate lighting coverage using 30-meter buffer
 
 - Further, **local Moran’s I** identifies spatial crime clusters.
 	- A prominent High-High cluster (dark red) appears around Belfast, confirming it as a key crime hotspot.
-	- The adjacent Low-High area (light blue) may represent a lower-crime suburb bordering higher-risk zones
+	- The adjacent Low-High area (light blue) may represent a lower-crime suburb bordering higher-risk zones.  
 
 <p align="center">
 <img src="./03_plots/lisa_map_ni.png" alt="drawing" width="600"/>
