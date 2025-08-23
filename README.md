@@ -22,8 +22,8 @@ In a complementary analysis, we evaluate lighting coverage using 30-meter buffer
 
 
 <p float="left">
-<img src="./03_plots/sl_loc_cloropleth_ni_blue.png" alt="drawing" width="600"/>
-<img src="./03_plots/crime_loc_cloropleth_ni.png" alt="drawing" width="600"/>
+<img src="./03_plots/sl_loc_cloropleth_ni_blue.png" alt="drawing" width="500"/>
+<img src="./03_plots/crime_loc_cloropleth_ni.png" alt="drawing" width="500"/>
 </p>
 
 
