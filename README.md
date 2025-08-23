@@ -3,9 +3,9 @@
 The final data analysis project for the Geospatial Analysis class with Alexandra Kapp at the Hertie School (Spring 2025 semester).
  
 **Contributors:**
-[Gayatri Shejwal](https://github.com/gayatri-shejwal)
-[Manjiri Satam](https://github.com/Manjiri-Satam)
-[Varvara Ilyina](https://github.com/varvarailyina)
+[Gayatri Shejwal](https://github.com/gayatri-shejwal)  
+[Manjiri Satam](https://github.com/Manjiri-Satam)  
+[Varvara Ilyina](https://github.com/varvarailyina)  
 
 
 ## Introduction
