@@ -21,7 +21,7 @@ To analyze spatial proximity, we calculate the distance from each crime location
 In a complementary analysis, we evaluate lighting coverage using 30-meter buffer zones around all streetlights. Each crime is flagged as occurring inside or outside a lit zone. Using the full dataset, we conduct a chi-squared test to examine variation in lighting exposure across crime types and season, and fit a logistic regression model to predict the likelihood of a crime falling within a lit area based on crime type and season.
 
 
-![image info](./03_plots/sl_loc_cloropleth_ni_blue.png){ width=50% }
+![image info](./03_plots/sl_loc_cloropleth_ni_blue.png){:height="36px" width="36px"}
 
 ![image info](./03_plots/crime_loc_cloropleth_ni.png)
 
